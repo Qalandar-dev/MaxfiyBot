@@ -1,0 +1,463 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from typing import List, Optional, Union
+from datetime import datetime
+from database import async_session, User, DownloadHistory, UserTariff, Tariff
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+from web.auth import get_current_user_id
+
+router = APIRouter(prefix="/api/user", tags=["user"])
+
+class HistoryItem(BaseModel):
+    id: int
+    file_name: Optional[str]
+    file_size_bytes: int
+    created_at: datetime
+    
+class CurrentTariff(BaseModel):
+    name: str
+    total_gb: float
+    used_gb: float
+    days_left: str
+
+class UserProfile(BaseModel):
+    id: int
+    first_name: str
+    balance: float
+    auto_compress: bool
+    save_to_saved_messages: bool
+    tariff: CurrentTariff
+
+@router.get("/me", response_model=UserProfile)
+async def get_my_profile(user_id: int = Depends(get_current_user_id)):
+    """User Dashboard uchun asosiy profil ma'lumotlari."""
+    async with async_session() as db:
+        # Load user with tariff
+        result = await db.execute(
+            select(User)
+            .where(User.id == user_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        # Get active tariff (safely handles multiple expired ones)
+        tariff_res = await db.execute(
+            select(UserTariff)
+            .options(selectinload(UserTariff.tariff)) # relationship
+            .where(UserTariff.user_id == user_id)
+            .order_by(UserTariff.expires_at.desc())
+            .limit(1)
+        )
+        user_tariff = tariff_res.scalars().first()
+        
+        # Get total downloaded today/month (mocking total gb for now since we just track size)
+        downloads_res = await db.execute(
+            select(DownloadHistory).where(DownloadHistory.user_id == user_id)
+        )
+        downloads = downloads_res.scalars().all()
+        used_bytes = sum([(d.file_size_bytes or 0) for d in downloads])
+        used_gb = used_bytes / (1024 * 1024 * 1024)
+        
+        if user_tariff and user_tariff.expires_at > datetime.utcnow():
+            t = user_tariff.tariff
+            days_left = str((user_tariff.expires_at - datetime.utcnow()).days)
+            tariff_info = CurrentTariff(
+                name=t.name,
+                total_gb=t.max_file_size_bytes / (1024*1024*1024),
+                used_gb=used_gb,
+                days_left=days_left
+            )
+        else:
+            # Boshlang'ich (tekin) tarif
+            days_used = (datetime.utcnow() - user.registered_at).days
+            days_left = max(0, 3 - days_used)
+            
+            tariff_info = CurrentTariff(
+                name="Boshlang'ich (Tekin)",
+                total_gb=0.5,
+                used_gb=used_gb,
+                days_left=str(days_left)
+            )
+
+        return UserProfile(
+            id=user.id,
+            first_name=user.first_name,
+            balance=user.balance,
+            auto_compress=user.auto_compress,
+            save_to_saved_messages=user.save_to_saved_messages,
+            tariff=tariff_info
+        )
+
+@router.get("/history", response_model=List[HistoryItem])
+async def get_my_history(user_id: int = Depends(get_current_user_id)):
+    """User Dashboard uchun oxirgi yuklamalar."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(DownloadHistory)
+            .where(DownloadHistory.user_id == user_id)
+            .order_by(DownloadHistory.created_at.desc())
+            .limit(10)
+        )
+        history = result.scalars().all()
+        return [
+            HistoryItem(
+                id=h.id,
+                file_name=h.file_name or "Noma'lum fayl",
+                file_size_bytes=h.file_size_bytes,
+                created_at=h.created_at
+            ) for h in history
+        ]
+
+class UserSettings(BaseModel):
+    autoCompress: bool
+    saveToSaved: bool
+
+@router.post("/settings")
+async def update_my_settings(settings: UserSettings, user_id: int = Depends(get_current_user_id)):
+    """User Dashboard orqali sozlamalarni saqlaydi."""
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user.auto_compress = settings.autoCompress
+        user.save_to_saved_messages = settings.saveToSaved
+        await db.commit()
+        
+        return {"status": "success"}
+
+class DownloadRequest(BaseModel):
+    link: str
+
+async def _do_download(user_id: int, user_first_name: str, link: str):
+    """Web App orqali yuborilgan havolani yuklab, bot orqali foydalanuvchiga yuboradi."""
+    from bot_instance import bot
+    from utils import parse_telegram_link
+    from userbot import userbot, AccessDeniedError, MessageNotFoundError, NoMediaError, MediaTooLargeError, UserbotError
+    from database import async_session, DownloadHistory
+    from limits import check_download_limits, LimitExceededError
+    import logging
+    
+    bot_logger = logging.getLogger("web_download")
+    
+    # Yuklash boshlanishidan oldin limitlarni tekshiramiz
+    try:
+        await check_download_limits(user_id)
+    except LimitExceededError as e:
+        await bot.send_message(user_id, f"🚫 <b>Yuklash rad etildi!</b>\n\n{str(e)}", parse_mode="HTML")
+        return
+
+    parsed = parse_telegram_link(link)
+    if parsed is None:
+        await bot.send_message(user_id, "❓ Havola noto'g'ri formatda.\n\nTo'g'ri format:\n<code>https://t.me/c/1234567890/456</code>", parse_mode="HTML")
+        return
+
+    progress_msg = await bot.send_message(user_id, "⏳ <b>Yuklanmoqda...</b>\n📡 Xabar olinmoqda...", parse_mode="HTML")
+    downloaded_path = None
+    try:
+        import time
+        from utils import human_readable_size
+        last_edit_time = 0
+
+        async def on_download_progress(current: int, total: int, *args, **kwargs):
+            nonlocal last_edit_time
+            now = time.time()
+            if now - last_edit_time > 2.0:
+                last_edit_time = now
+                pct = (current / total * 100) if total else 0
+                c_str = human_readable_size(current)
+                t_str = human_readable_size(total) if total else "?"
+                import asyncio
+                
+                async def _update_ui():
+                    try:
+                        await bot.edit_message_text(
+                            text=f"📥 <b>Media serverga yuklanmoqda...</b>\n\n"
+                                 f"📊 {pct:.1f}%\n"
+                                 f"💾 {c_str} / {t_str}",
+                            chat_id=user_id, 
+                            message_id=progress_msg.message_id,
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        pass
+                asyncio.create_task(_update_ui())
+
+        await bot.edit_message_text(text="📥 <b>Media serverga yuklanmoqda...</b>", chat_id=user_id, message_id=progress_msg.message_id, parse_mode="HTML")
+        downloaded_path, media_type = await userbot.fetch_and_download(user_id, parsed, progress_callback=on_download_progress)
+
+        # DB ga tarix yozish
+        async with async_session() as db:
+            from database import DownloadHistory
+            db.add(DownloadHistory(
+                user_id=user_id,
+                file_name=downloaded_path.name,
+                file_size_bytes=downloaded_path.stat().st_size
+            ))
+            await db.commit()
+
+        await bot.edit_message_text(text="📤 <b>Sizga yuborilmoqda...</b>", chat_id=user_id, message_id=progress_msg.message_id, parse_mode="HTML")
+
+        from aiogram.types import FSInputFile
+        from utils import MediaType, extract_mp4_metadata
+
+        file = FSInputFile(downloaded_path)
+        caption = "✅ Mana sizning faylingiz!"
+
+        if media_type == MediaType.VIDEO:
+            v_w, v_h, v_dur = extract_mp4_metadata(downloaded_path)
+            await bot.send_video(
+                user_id, 
+                file, 
+                caption=caption, 
+                width=v_w or None,
+                height=v_h or None,
+                duration=v_dur or None,
+                supports_streaming=True
+            )
+        elif media_type == MediaType.PHOTO:
+            await bot.send_photo(user_id, file, caption=caption)
+        elif media_type == MediaType.AUDIO:
+            await bot.send_audio(user_id, file, caption=caption)
+        elif media_type == MediaType.VOICE:
+            await bot.send_voice(user_id, file)
+        elif media_type == MediaType.VIDEO_NOTE:
+            await bot.send_video_note(user_id, file)
+        else:
+            await bot.send_document(user_id, file, caption=caption)
+
+        await bot.delete_message(user_id, progress_msg.message_id)
+        logger.info(f"✅ Web App yuklash: user={user_id}, fayl={downloaded_path.name}")
+
+    except AccessDeniedError as e:
+        await bot.edit_message_text(text=f"🚫 Kirish taqiqlangan!\n{e}\n\nAkkauntingiz kanalga a'zo ekanligini tekshiring.", chat_id=user_id, message_id=progress_msg.message_id)
+    except MessageNotFoundError as e:
+        await bot.edit_message_text(text=f"❌ Xabar topilmadi: {e}", chat_id=user_id, message_id=progress_msg.message_id)
+    except NoMediaError:
+        await bot.edit_message_text(text="⚠️ Bu xabarda yuklanadigan media yo'q.", chat_id=user_id, message_id=progress_msg.message_id)
+    except UserbotError as e:
+        await bot.edit_message_text(text=f"⚠️ Sessiyangiz ulanmagan!\n\nWeb App → Ulanish bo'limidan Telegram akkauntingizni ulang.", chat_id=user_id, message_id=progress_msg.message_id, parse_mode="HTML")
+        logger.error(f"UserbotError: {e}")
+    except Exception as e:
+        logger.error(f"Web download xatolik: {e}", exc_info=True)
+        try:
+            await bot.edit_message_text(text=f"❌ Kutilmagan xatolik: {e}", chat_id=user_id, message_id=progress_msg.message_id)
+        except Exception:
+            pass
+    finally:
+        if downloaded_path and downloaded_path.exists():
+            downloaded_path.unlink(missing_ok=True)
+
+
+@router.post("/download")
+async def request_download(req: DownloadRequest, user_id: int = Depends(get_current_user_id)):
+    """Web app orqali yuborilgan havolani qabul qilib, yuklash jarayonini boshlaydi."""
+    import asyncio
+    from database import async_session, User
+    from sqlalchemy import select
+
+    async with async_session() as db:
+        result = await db.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user or user.is_banned:
+            raise HTTPException(status_code=403, detail="Ruxsat etilmagan foydalanuvchi")
+
+    asyncio.create_task(_do_download(user_id, user.first_name, req.link))
+    return {"status": "success"}
+class ChannelInfo(BaseModel):
+    id: int
+    title: str
+    type: str = "channel"
+
+_channels_cache: dict = {}
+
+@router.get('/channels', response_model=List[ChannelInfo])
+async def get_my_channels(refresh: bool = False, user_id: int = Depends(get_current_user_id)):
+    """Userga tegishli (ulangan) kanal va guruhlar ro'yxatini qaytaradi."""
+    import time
+    import asyncio
+    from userbot import userbot
+    from pyrogram.enums import ChatType
+    from pyrogram import raw
+
+    # Tezkor kesh (agar refresh=False bo'lsa va 5 daqiqa ichida olingan bo'lsa)
+    if not refresh and user_id in _channels_cache:
+        cached_time, cached_channels = _channels_cache[user_id]
+        if time.time() - cached_time < 300 and cached_channels:
+            return cached_channels
+    
+    try:
+        if user_id not in userbot.clients or not userbot.clients[user_id].is_connected:
+            from database import async_session, UserSession
+            from sqlalchemy import select
+            async with async_session() as db:
+                result = await db.execute(
+                    select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active == True)
+                )
+                session = result.scalar_one_or_none()
+                if not session or not session.session_string:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Telegram akkauntingiz ulanmagan. Iltimos, Sozlamalar bo'limidan akkauntingizni ulang."
+                    )
+                try:
+                    await asyncio.wait_for(userbot.start_session(user_id, session.session_string), timeout=10.0)
+                except asyncio.TimeoutError:
+                    raise HTTPException(
+                        status_code=408, 
+                        detail="Telegram akkauntingizga ulanishda vaqt tugadi. Qaytadan urinib ko'ring."
+                    )
+
+        client = userbot.get_client(user_id)
+        
+        async def _fetch_dialogs():
+            ch_list = []
+            seen_ids = set()
+            valid_types = {
+                ChatType.CHANNEL,
+                ChatType.GROUP,
+                ChatType.SUPERGROUP,
+                ChatType.FORUM,
+                getattr(ChatType, "MONOFORUM", None)
+            }
+
+            # 1. Asosiy jilddagi dialoglar (300 tagacha guruh va kanal)
+            try:
+                async for dialog in client.get_dialogs(limit=300):
+                    if dialog.chat and dialog.chat.type in valid_types and dialog.chat.id not in seen_ids:
+                        seen_ids.add(dialog.chat.id)
+                        c_type = dialog.chat.type
+                        if c_type == ChatType.CHANNEL:
+                            prefix = "📢 "
+                            t_label = "channel"
+                        elif c_type in [ChatType.FORUM, getattr(ChatType, "MONOFORUM", None)]:
+                            prefix = "💬 [Forum] "
+                            t_label = "group"
+                        else:
+                            prefix = "👥 [Guruh] "
+                            t_label = "group"
+                        
+                        raw_title = dialog.chat.title or ("Kanal" if c_type == ChatType.CHANNEL else "Guruh")
+                        ch_list.append(ChannelInfo(
+                            id=dialog.chat.id, 
+                            title=f"{prefix}{raw_title}",
+                            type=t_label
+                        ))
+            except Exception as d_err:
+                logger.warning(f"get_dialogs asosiy jild xatosi: {d_err}")
+
+            # 2. Arxiv jildidagi dialoglar (folder_id=1)
+            try:
+                r_arch = await client.invoke(
+                    raw.functions.messages.GetDialogs(
+                        offset_date=0,
+                        offset_id=0,
+                        offset_peer=raw.types.InputPeerEmpty(),
+                        limit=100,
+                        hash=0,
+                        folder_id=1
+                    )
+                )
+                if r_arch and hasattr(r_arch, "chats"):
+                    for c in r_arch.chats:
+                        cid = getattr(c, "id", None)
+                        if not cid:
+                            continue
+                        full_id = -int(f"100{cid}") if isinstance(c, raw.types.Channel) else -int(cid)
+                        if full_id not in seen_ids:
+                            seen_ids.add(full_id)
+                            c_title = getattr(c, "title", "Nomsiz")
+                            is_megagroup = getattr(c, "megagroup", False)
+                            is_channel = isinstance(c, raw.types.Channel) and not is_megagroup
+                            prefix = "📢 [Arxiv] " if is_channel else "👥 [Arxiv Guruh] "
+                            ch_list.append(ChannelInfo(
+                                id=full_id,
+                                title=f"{prefix}{c_title}",
+                                type="channel" if is_channel else "group"
+                            ))
+            except Exception as arch_e:
+                logger.debug(f"Arxiv dialoglarini olishda ogohlantirish: {arch_e}")
+
+            return ch_list
+
+        try:
+            channels = await asyncio.wait_for(_fetch_dialogs(), timeout=15.0)
+        except asyncio.TimeoutError:
+            logger.warning(f"get_dialogs timeout for user {user_id}")
+            if user_id in _channels_cache and _channels_cache[user_id][1]:
+                return _channels_cache[user_id][1]
+            raise HTTPException(
+                status_code=408,
+                detail="Kanallarni olishda Telegram javob bermadi. Iltimos qaytadan 'Yangilash' tugmasini bosing."
+            )
+
+        _channels_cache[user_id] = (time.time(), channels)
+        return channels
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"get_my_channels error (User {user_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+class TransferRequest(BaseModel):
+    source_chat_id: Union[int, str]
+    target_chat_id: Union[int, str]
+    media_type: str
+
+@router.post('/transfer')
+async def start_transfer(req: TransferRequest, user_id: int = Depends(get_current_user_id)):
+    """Ko'chirish (transfer) jarayonini orqa fonda boshlaydi."""
+    from userbot import userbot
+    from web.api.transfer_task import run_transfer
+    from utils import parse_target_chat
+    import asyncio
+    
+    try:
+        if user_id not in userbot.clients or not userbot.clients[user_id].is_connected:
+            from database import async_session, UserSession
+            from sqlalchemy import select
+            async with async_session() as db:
+                result = await db.execute(
+                    select(UserSession).where(UserSession.user_id == user_id, UserSession.is_active == True)
+                )
+                session = result.scalar_one_or_none()
+                if session and session.session_string:
+                    await userbot.start_session(user_id, session.session_string)
+
+        client = userbot.get_client(user_id)
+        
+        parsed_source = parse_target_chat(req.source_chat_id)
+        parsed_target = parse_target_chat(req.target_chat_id)
+        
+        # Orqa fonda (background) ko'chirishni boshlash
+        asyncio.create_task(run_transfer(
+            user_id,
+            client, 
+            parsed_source, 
+            parsed_target, 
+            req.media_type
+        ))
+        return {'status': 'ok', 'message': "Tayyorlanmoqda..."}
+    except Exception as e:
+        logger.error(f"start_transfer error (User {user_id}): {e}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.get('/transfer/status')
+async def get_transfer_status(user_id: int = Depends(get_current_user_id)):
+    from web.api.transfer_task import transfer_states
+    state = transfer_states.get(user_id)
+    if not state:
+        return {"status": "none"}
+    return state
+
+@router.post('/transfer/cancel')
+async def cancel_transfer(user_id: int = Depends(get_current_user_id)):
+    """Ko'chirish jarayonini bekor qilish."""
+    from web.api.transfer_task import cancel_transfer_task
+    cancel_transfer_task(user_id)
+    return {"status": "ok", "message": "Ko'chirish to'xtatildi"}

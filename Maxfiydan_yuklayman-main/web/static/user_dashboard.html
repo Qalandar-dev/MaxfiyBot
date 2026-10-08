@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Maxfiy Media Bot — Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-bg: #0f172a;
+            --tg-text: #f8fafc;
+            --tg-btn: #3b82f6;
+            --tg-btn-text: #ffffff;
+            --tg-secondary: #1e293b;
+            --tg-hint: #94a3b8;
+        }
+        html, body {
+            touch-action: manipulation;
+            -webkit-text-size-adjust: 100%;
+        }
+        body { 
+            background: var(--tg-bg); 
+            color: var(--tg-text); 
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        input, select, textarea {
+            font-size: 16px !important;
+            touch-action: manipulation;
+        }
+        
+        /* Modern Glassmorphism Cards */
+        .glass { 
+            background: rgba(30, 41, 59, 0.45); 
+            backdrop-filter: blur(24px); 
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Premium Buttons */
+        .btn-primary { 
+            background: linear-gradient(135deg, var(--tg-btn), #6366f1); 
+            color: var(--tg-btn-text); 
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.35);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+        }
+        .btn-primary:active { transform: scale(0.96); box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25); }
+        .btn-primary:disabled { background: var(--tg-secondary); color: var(--tg-hint); box-shadow: none; transform: none; cursor: not-allowed; opacity: 0.6; }
+        
+        /* Smooth Page Transitions */
+        .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .fade-enter-from { opacity: 0; transform: translateY(15px) scale(0.98); }
+        .fade-leave-to { opacity: 0; transform: translateY(-15px) scale(0.98); }
+        
+        /* Floating animations */
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        .animate-float { animation: float 3s ease-in-out infinite; }
+        
+        /* Pulse glow */
+        @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); } 50% { box-shadow: 0 0 20px 5px rgba(59,130,246,0.1); } }
+        .glow-effect { animation: pulseGlow 2s infinite; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+        
+        /* Navigation styling */
+        .nav-icon { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .nav-item.active .nav-icon { transform: translateY(-3px); color: var(--tg-btn); filter: drop-shadow(0 4px 6px rgba(59, 130, 246, 0.3)); }
+        .nav-item.active span { font-weight: 700; color: var(--tg-btn); }
+        
+        /* Checkbox Switch */
+        .toggle-checkbox:checked { right: 0; border-color: #68D391; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #68D391; }
+
+        /* Countdown ring */
+        .countdown-ring { position: relative; width: 80px; height: 80px; }
+        .countdown-ring svg { transform: rotate(-90deg); filter: drop-shadow(0 0 4px currentColor); }
+        .countdown-ring .track { fill: none; stroke: rgba(255,255,255,.05); stroke-width: 5; }
+        .countdown-ring .progress { fill: none; stroke-width: 5; stroke-linecap: round; stroke-dasharray: 220; transition: stroke-dashoffset .9s linear; }
+        .countdown-number { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body class="min-h-screen pb-24">
+
+<div id="app">
+    <!-- ════ HEADER ════ -->
+    <header class="glass sticky top-0 z-50 flex items-center justify-between px-4 py-3">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-500 to-violet-500 flex items-center justify-center font-bold text-lg shadow">
+                {{ tgUser?.first_name ? tgUser.first_name.charAt(0).toUpperCase() : (profile ? profile.first_name.charAt(0).toUpperCase() : '?') }}
+            </div>
+            <div>
+                <p class="font-semibold leading-tight">{{ tgUser?.first_name || profile?.first_name || 'Yuklanmoqda...' }}</p>
+                <p class="text-[11px] text-slate-400">ID: {{ tgUser?.id || profile?.id || '—' }}</p>
+            </div>
+        </div>
+        <span v-if="sessionActive" class="text-[11px] px-2 py-1 rounded-full bg-green-500/15 text-green-400 border border-green-500/25">🟢 Ulangan</span>
+        <span v-else class="text-[11px] px-2 py-1 rounded-full bg-red-500/15 text-red-400 border border-red-500/25">🔴 Ulanmagan</span>
+    </header>
+
+    <!-- ════ TABS ════ -->
+    <main class="p-4 relative z-10 min-h-[75vh]">
+        <transition name="fade" mode="out-in">
+
+            <!-- ── ASOSIY ── -->
+            <div v-if="tab === 'home'" key="home" class="space-y-5 animate-fade-in-up">
+
+                <!-- Ulash banneri -->
+                <div v-if="!sessionActive" class="glass p-5 rounded-2xl border-l-4 border-blue-500 shadow-lg relative overflow-hidden">
+                    <div class="absolute -right-4 -top-4 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none"></div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="text-blue-400 text-2xl">⚠️</span>
+                        <h3 class="font-bold text-lg">Akkauntni ulang!</h3>
+                    </div>
+                    <p class="text-sm text-slate-300 mb-4 leading-relaxed">Media yuklab olish uchun avval Telegram akkauntingizni botga ulashingiz kerak.</p>
+                    </div>
+
+                <!-- Tarif kartasi -->
+                <div v-if="profile" class="glass p-5 rounded-2xl overflow-hidden relative shadow-lg group">
+                    <div class="absolute -right-8 -top-8 w-32 h-32 bg-gradient-to-br from-blue-500/30 to-violet-500/30 rounded-full blur-2xl pointer-events-none group-hover:scale-110 transition-transform duration-500"></div>
+                    <p class="text-[10px] uppercase tracking-[0.2em] text-slate-400 mb-2 font-bold flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v8l9-11h-7z"/></svg>
+                        Joriy Tarif
+                    </p>
+                    <div class="flex justify-between items-end mb-4">
+                        <h2 class="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">{{ profile.tariff.name }}</h2>
+                        <span class="text-sm font-medium px-2.5 py-1 rounded-lg bg-white/5 border border-white/10">{{ profile.tariff.days_left }} kun qoldi</span>
+                    </div>
+                    <div class="flex justify-between text-xs mb-2 text-slate-300">
+                        <span>Limit (GB)</span>
+                        <span class="font-mono">{{ profile.tariff.used_gb.toFixed(2) }} <span class="text-slate-500">/</span> {{ profile.tariff.total_gb }} GB</span>
+                    </div>
+                    <div class="w-full bg-slate-800/80 rounded-full h-2.5 shadow-inner p-0.5">
+                        <div class="bg-gradient-to-r from-blue-400 to-indigo-500 h-1.5 rounded-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(99,102,241,0.5)]" :style="{width: tariffPct + '%'}"></div>
+                    </div>
+                    <button @click="tab='tarif'" class="mt-4 text-sm font-medium text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors">
+                        Tarifni yangilash <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </button>
+                </div>
+                <div v-else class="glass p-5 rounded-2xl animate-pulse h-32 border border-slate-700/50"></div>
+
+                <!-- Yuklash uchun havola -->
+                <div class="glass p-5 rounded-2xl shadow-lg relative overflow-hidden">
+                    <div class="absolute -left-10 -bottom-10 w-24 h-24 bg-blue-500/10 rounded-full blur-xl pointer-events-none"></div>
+                    <h3 class="font-bold text-base mb-3 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+                        Media yuklash
+                    </h3>
+                    <div class="flex gap-2 relative z-10">
+                        <div class="relative flex-1">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                            </div>
+                            <input v-model="downloadLink" type="url" placeholder="https://t.me/c/..."
+                                class="w-full pl-9 p-3 rounded-xl bg-slate-800/80 border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-white text-sm transition-all shadow-inner">
+                        </div>
+                        <button @click="startDownload" :disabled="!downloadLink || isDownloading" class="btn-primary px-5 rounded-xl font-semibold transition-all flex items-center gap-2">
+                            <svg v-if="isDownloading" class="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            <span v-else>Yuklash</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Oxirgi yuklamalar -->
+                <div>
+                    <h3 class="font-bold text-base mb-3 mt-2">Oxirgi Yuklamalar</h3>
+                    <div v-if="historyLoading" class="space-y-2">
+                        <div v-for="n in 2" :key="n" class="glass rounded-xl h-14 animate-pulse"></div>
+                    </div>
+                    <div v-else-if="history.length === 0" class="text-center py-10 glass rounded-2xl">
+                        <span class="text-4xl block mb-2">📭</span>
+                        <p class="text-sm text-slate-400">Hozircha hech narsa yuklanmagan</p>
+                    </div>
+                    <div v-else class="space-y-2">
+                        <div v-for="item in history" :key="item.id" class="glass rounded-xl p-3 flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-blue-500/15 flex items-center justify-center text-lg flex-shrink-0">
+                                {{ fileIcon(item.file_name) }}
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium truncate">{{ item.file_name }}</p>
+                                <p class="text-[11px] text-slate-400">{{ formatDate(item.created_at) }}</p>
+                            </div>
+                            <span class="text-xs text-slate-300 whitespace-nowrap">{{ formatSize(item.file_size_bytes) }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── TARIF ── -->
+            <div v-else-if="tab === 'tarif'" key="tarif" class="space-y-4">
+                <h2 class="text-xl font-bold">Tariflar</h2>
+
+                <!-- To'lov oqimi -->
+                <div v-if="payStep === 'info'" class="glass p-5 rounded-2xl border border-blue-500/40">
+                    <!-- Countdown ring -->
+                    <div class="flex items-center gap-4 mb-4">
+                        <div class="countdown-ring">
+                            <svg viewBox="0 0 80 80" width="80" height="80">
+                                <circle class="track" cx="40" cy="40" r="35"/>
+                                <circle class="progress" cx="40" cy="40" r="35"
+                                    :stroke="countdownColor"
+                                    :stroke-dashoffset="countdownOffset"/>
+                            </svg>
+                            <div class="countdown-number">{{ countdownSec }}</div>
+                        </div>
+                        <div>
+                            <p class="text-xs text-slate-400 mb-1">To'lov vaqti tugaydi</p>
+                            <p class="font-bold text-lg text-yellow-400">{{ payData.unique_amount?.toLocaleString() }} so'm</p>
+                            <p class="text-xs text-slate-400">Aynan shu summani o'tkaz</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-800 rounded-xl p-4 space-y-3 mb-4">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-slate-400">Karta raqami</span>
+                            <button @click="copy(payData.card_number)" class="font-mono font-bold text-white text-sm hover:text-blue-300 transition">
+                                {{ payData.card_number }}
+                            </button>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-slate-400">Karta egasi</span>
+                            <span class="text-sm font-medium">{{ payData.card_holder }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-slate-400">Bank</span>
+                            <span class="text-sm font-medium">{{ payData.bank_name }}</span>
+                        </div>
+                        <div class="h-px bg-slate-700"></div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-slate-400">Tarif</span>
+                            <span class="text-sm font-medium">{{ payData.tariff_name }}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-slate-400">O'tkazma summasi</span>
+                            <button @click="copy(payData.unique_amount)" class="font-bold text-yellow-400 hover:text-yellow-300 text-base transition">
+                                {{ payData.unique_amount?.toLocaleString() }} so'm
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 mb-4 text-xs text-slate-300 leading-relaxed">
+                        ⚠️ <b>Muhim:</b> Aynan <b>{{ payData.unique_amount?.toLocaleString() }} so'm</b> o'tkazing. Boshqa summa o'tkazilsa tizim aniqlay olmaydi. To'lovdan so'ng <b>1-2 daqiqa</b> ichida tarif avtomatik faollashadi.
+                    </div>
+
+                    <div v-if="countdownSec > 0" class="flex items-center justify-center gap-2 py-3 text-sm text-slate-400">
+                        <span class="inline-block w-3 h-3 rounded-full bg-blue-400 animate-pulse"></span>
+                        {{ polling ? '⏳ To\'lov tekshirilmoqda...' : 'Tayyor bo\'lgach kutilmoqda...' }}
+                    </div>
+                    <button @click="cancelPay" class="w-full py-2 text-sm text-slate-400">Bekor qilish</button>
+
+                    <!-- Expired -->
+                    <div v-if="countdownSec === 0" class="text-center py-2">
+                        <p class="text-red-400 text-sm mb-2">⏱ Vaqt tugadi! Qaytadan urinib ko'ring.</p>
+                        <button @click="cancelPay" class="btn-primary w-full py-3 rounded-xl font-semibold">Qayta boshlash</button>
+                    </div>
+                </div>
+
+                <!-- Tarif kartalar ro'yxati -->
+                <div v-if="payStep !== 'info'">
+                    <p class="text-sm text-slate-400 mb-4">O'zingizga mos tarifni tanlang.</p>
+                    <div v-if="tarifsLoading" class="space-y-3">
+                        <div v-for="n in 3" :key="n" class="glass rounded-2xl h-36 animate-pulse"></div>
+                    </div>
+                    <div v-else class="space-y-3">
+                        <div v-for="t in tariffs" :key="t.id"
+                            class="glass p-5 rounded-2xl relative"
+                            :class="{'border border-blue-500/60': profile && t.id === profile.tariff_id}">
+                            <div v-if="profile && t.id === profile.tariff_id"
+                                class="absolute -top-2.5 right-4 bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Faol</div>
+                            <h3 class="text-lg font-bold mb-1">{{ t.name }}</h3>
+                            <p class="text-2xl font-bold mb-3">{{ t.price > 0 ? t.price.toLocaleString() + ' so\'m' : 'Bepul' }}</p>
+                            <ul class="text-sm text-slate-400 space-y-1 mb-4">
+                                <li>✔ Limit: {{ t.max_gb }} GB media</li>
+                                <li>✔ Muddat: {{ t.duration_days }} kun</li>
+                                <li>✔ {{ t.max_downloads_per_day < 0 ? 'Cheksiz' : t.max_downloads_per_day + 'ta' }} yuklab olish/kun</li>
+                            </ul>
+                            <button v-if="t.price > 0" @click="startCheckout(t.id)" class="btn-primary w-full py-2.5 rounded-xl font-semibold">Sotib olish</button>
+                            <button v-else disabled class="w-full py-2.5 rounded-xl font-semibold bg-slate-700/40 text-slate-400 cursor-not-allowed">Bepul tarif</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── KO'CHIRISH ── -->
+            <div v-else-if="tab === 'transfer'" key="transfer" class="space-y-4 animate-fade-in-up">
+                <div class="glass p-5 rounded-2xl relative overflow-hidden">
+                    <h2 class="text-xl font-bold mb-1">Kanaldan ko'chirish</h2>
+                    <p class="text-sm text-slate-400 mb-5">Bir kanaldagi barcha materiallarni boshqasiga o'tkazish.</p>
+
+                    <div v-if="!sessionActive" class="text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 p-4 rounded-xl mb-4 flex items-center justify-between">
+                        <div>
+                            <p class="font-bold text-amber-300">⚠️ Akkaunt ulanmagan</p>
+                            <p class="text-xs text-amber-400/80">Kanallarni ko'rish va ko'chirish uchun avval akkauntingizni ulang.</p>
+                        </div>
+                        <button @click="tab='sozlama'" class="text-xs bg-amber-500 text-slate-900 px-3 py-1.5 rounded-lg font-bold hover:bg-amber-400 transition">Ulash</button>
+                    </div>
+
+                    <!-- Kiritish / Form holati -->
+                    <div v-else-if="!transferState || transferState.status === 'none' || transferState.status === 'error' || transferState.status === 'completed'">
+                        
+                        <!-- Muvaffaqiyatli xabar (Completed Animation) -->
+                        <div v-if="transferState?.status === 'completed'" class="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/20 text-center animate-fade-in-up">
+                            <div class="w-16 h-16 mx-auto bg-green-500/20 text-green-400 rounded-full flex items-center justify-center text-3xl mb-2 animate-bounce">✨</div>
+                            <h3 class="text-green-400 font-bold mb-1">Muvaffaqiyatli Yakunlandi!</h3>
+                            <p class="text-xs text-green-300/80">{{ transferState.message }}</p>
+                            <button @click="resetTransfer" class="mt-4 text-xs bg-slate-800 px-4 py-2 rounded-lg text-white">Yangi ko'chirish</button>
+                        </div>
+                        
+                        <!-- Xatolik xabari -->
+                        <div v-if="transferState?.status === 'error'" class="mb-6 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-center">
+                            <p class="text-xs text-red-400">{{ transferState.message }}</p>
+                            <button @click="resetTransfer" class="mt-2 text-xs bg-slate-800 px-4 py-1.5 rounded-lg text-white">Qayta urinish</button>
+                        </div>
+
+                        <div v-if="!transferState || transferState.status === 'none'">
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="block text-xs text-slate-400 uppercase tracking-wider">Qaysi kanal yoki guruhdan:</label>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="sourceManual = !sourceManual" type="button" class="text-xs text-cyan-400 hover:text-cyan-300 font-medium">
+                                            {{ sourceManual ? '📋 Ro\'yxat' : '✏️ Havola/ID' }}
+                                        </button>
+                                        <button @click="loadChannels(true)" type="button" class="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                                            <span :class="{'animate-spin inline-block': loadingChannels}">🔄</span> Yangilash
+                                        </button>
+                                    </div>
+                                </div>
+                                <select v-if="!sourceManual" v-model="transferSource" class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-blue-500 outline-none text-white text-sm">
+                                    <option value="" disabled>{{ loadingChannels ? '⏳ Kanal va guruhlar yuklanmoqda...' : (channels.length ? 'Kanal yoki guruhni tanlang (' + channels.length + ' ta)...' : (!sessionActive ? '⚠️ Avval akkauntni ulang' : 'Topilmadi (🔄 Yangilashni bosing)')) }}</option>
+                                    <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.title }}</option>
+                                </select>
+                                <div v-else>
+                                    <input v-model="transferSource" type="text" placeholder="https://t.me/c/1234567890/1 yoki -100... yoki @guruh" class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-cyan-500 outline-none text-white text-sm">
+                                    <p class="text-[11px] text-slate-400 mt-1">💡 Maxfiy guruh havolasi, post havolasi (t.me/c/...) yoki ID sini kiriting</p>
+                                </div>
+                            </div>
+
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="block text-xs text-slate-400 uppercase tracking-wider">Qaysi kanal yoki guruhga:</label>
+                                    <button @click="targetManual = !targetManual" type="button" class="text-xs text-cyan-400 hover:text-cyan-300 font-medium">
+                                        {{ targetManual ? '📋 Ro\'yxat' : '✏️ Havola/ID' }}
+                                    </button>
+                                </div>
+                                <select v-if="!targetManual" v-model="transferTarget" class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-blue-500 outline-none text-white text-sm">
+                                    <option value="" disabled>{{ loadingChannels ? '⏳ Kanal va guruhlar yuklanmoqda...' : (channels.length ? 'Kanal yoki guruhni tanlang (' + channels.length + ' ta)...' : (!sessionActive ? '⚠️ Avval akkauntni ulang' : 'Topilmadi (🔄 Yangilashni bosing)')) }}</option>
+                                    <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.title }}</option>
+                                </select>
+                                <div v-else>
+                                    <input v-model="transferTarget" type="text" placeholder="https://t.me/c/... yoki -100... yoki @kanal" class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-cyan-500 outline-none text-white text-sm">
+                                    <p class="text-[11px] text-slate-400 mt-1">💡 Qabul qiluvchi kanal/guruh havolasi yoki ID sini kiriting</p>
+                                </div>
+                            </div>
+
+                            <div class="mb-5">
+                                <label class="block text-xs text-slate-400 uppercase tracking-wider mb-2">Nimani ko'chiramiz:</label>
+                                <select v-model="transferType" class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-blue-500 outline-none text-white text-sm">
+                                    <option value="all">Barchasi (Rasm + Video)</option>
+                                    <option value="photo">Faqat Rasmlar</option>
+                                    <option value="video">Faqat Videolar</option>
+                                </select>
+                            </div>
+
+                            <button @click="startTransfer" :disabled="!transferSource || !transferTarget || transferSource === transferTarget" class="btn-primary w-full py-3 rounded-xl font-semibold flex items-center justify-center gap-2">
+                                🚀 Ko'chirishni boshlash
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Progress (Yuklanmoqda) holati -->
+                    <div v-else class="text-center py-4">
+                        <div class="w-16 h-16 mx-auto border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin mb-4"></div>
+                        <h3 class="font-bold text-base mb-2 text-blue-400 break-words px-2">{{ transferState.message }}</h3>
+                        
+                        <div v-if="transferState.total > 0">
+                            <p class="text-sm text-slate-400 mb-3">Ko'chirildi: <span class="font-mono text-white">{{ transferState.current }}</span> / <span class="font-mono">{{ transferState.total }}</span></p>
+                            
+                            <div class="w-full bg-slate-800 rounded-full h-3 mb-2 shadow-inner p-0.5">
+                                <div class="bg-gradient-to-r from-blue-400 to-indigo-500 h-2 rounded-full transition-all duration-300 shadow-[0_0_8px_rgba(99,102,241,0.6)]" :style="{width: ((transferState.current / transferState.total) * 100) + '%'}"></div>
+                            </div>
+                            <p class="text-xs text-slate-500 text-right mb-4">{{ ((transferState.current / transferState.total) * 100).toFixed(1) }}%</p>
+                        </div>
+                        <div v-else class="text-sm text-slate-400 mb-4">
+                            Fayllar sanalmoqda...
+                        </div>
+
+                        <button @click="cancelTransfer" type="button" class="text-xs bg-red-500/15 text-red-400 border border-red-500/25 px-4 py-2 rounded-xl hover:bg-red-500/25 transition font-semibold">
+                            ⏹ Jarayonni to'xtatish
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── SOZLAMALAR ── -->
+            <div v-else-if="tab === 'sozlama'" key="sozlama" class="space-y-4">
+                <h2 class="text-xl font-bold">Sozlamalar</h2>
+
+                <!-- Kiritilgan Ulanish qismi -->
+            <div class="space-y-4 mb-4">
+                <h3 class="text-lg font-bold">Akkaunt ulanishi</h3>
+
+                <div v-if="sessionActive" class="glass p-6 rounded-2xl text-center">
+                    <div class="w-16 h-16 mx-auto bg-green-500/15 text-green-400 rounded-full flex items-center justify-center text-3xl mb-4">✓</div>
+                    <h3 class="text-lg font-bold mb-1">Sessiya faol</h3>
+                    <p class="text-sm text-slate-400 mb-6">Akkauntingiz ulangan. Bot yopiq kanallardan media yuklashga tayyor.</p>
+                    <button @click="logout" class="w-full py-3 rounded-xl font-semibold bg-red-500/15 text-red-400 border border-red-500/25 hover:bg-red-500/25 transition">Akkauntdan chiqish</button>
+                </div>
+
+                <div v-else class="glass p-5 rounded-2xl">
+                    <!-- Step: telefon -->
+                    <div v-if="authStep === 'phone'">
+                        <p class="text-sm text-slate-400 mb-4">Telefon raqamingizni xalqaro formatda kiriting (+998...).</p>
+                        <input v-model="phone" type="tel" placeholder="+998901234567"
+                            class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-blue-500 outline-none mb-4 text-white">
+                        <button @click="sendCode" :disabled="loading" class="btn-primary w-full py-3 rounded-xl font-semibold">
+                            {{ loading ? 'Yuborilmoqda...' : 'Kodni olish' }}
+                        </button>
+                        <button @click="showWhyPhone = true" class="w-full mt-3 py-2 text-sm text-blue-400 hover:text-blue-300 transition">
+                            ❓ Nima uchun nomer ulashim kerak?
+                        </button>
+                    </div>
+                    <!-- Step: kod -->
+                    <div v-else-if="authStep === 'code'">
+                        <p class="text-sm text-slate-400 mb-4">Telegram ilovangizga kelgan kodni kiriting.</p>
+                        <input v-model="code" type="text" placeholder="12345" maxlength="6"
+                            class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-blue-500 outline-none mb-4 text-white text-center tracking-[.6em] font-mono text-xl">
+                        <button @click="verifyCode" :disabled="loading" class="btn-primary w-full py-3 rounded-xl font-semibold mb-2">
+                            {{ loading ? 'Tekshirilmoqda...' : 'Tasdiqlash' }}
+                        </button>
+                        <button @click="authStep='phone'" class="w-full py-2 text-sm text-slate-400">← Orqaga</button>
+                    </div>
+                    <!-- Step: 2FA -->
+                    <div v-else-if="authStep === 'password'">
+                        <p class="text-sm text-slate-400 mb-4">Akkauntingiz 2FA bilan himoyalangan. Parolni kiriting.</p>
+                        <input v-model="pass2fa" type="password" placeholder="Parol"
+                            class="w-full p-3 rounded-xl bg-slate-800 border border-slate-600 focus:border-blue-500 outline-none mb-4 text-white">
+                        <button @click="verifyPassword" :disabled="loading" class="btn-primary w-full py-3 rounded-xl font-semibold">
+                            {{ loading ? 'Kirilmoqda...' : 'Kirish' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+                <div class="glass p-5 rounded-2xl space-y-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="font-medium">Video siqish</h4>
+                            <p class="text-xs text-slate-400">Videolarni kichikroq qilib jo'natish</p>
+                        </div>
+                        <label class="relative inline-flex cursor-pointer">
+                            <input type="checkbox" v-model="settings.autoCompress" class="sr-only peer">
+                            <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                        </label>
+                    </div>
+                    <div class="h-px bg-slate-700/60"></div>
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="font-medium">Saved Messages</h4>
+                            <p class="text-xs text-slate-400">Fayllarni Saqlangan xabarlarga ham yuborish</p>
+                        </div>
+                        <label class="relative inline-flex cursor-pointer">
+                            <input type="checkbox" v-model="settings.saveToSaved" class="sr-only peer">
+                            <div class="w-11 h-6 bg-slate-700 rounded-full peer peer-checked:bg-blue-500 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5"></div>
+                        </label>
+                    </div>
+                </div>
+                <button @click="saveSettings" class="btn-primary w-full py-3 rounded-xl font-semibold">Saqlash</button>
+            </div>
+
+        </transition>
+    </main>
+
+    <!-- ════ BOTTOM NAV ════ -->
+    <nav class="fixed bottom-0 w-full max-w-md bg-slate-900/90 backdrop-blur-xl border-t border-slate-800/60 flex justify-around p-3 z-50 pb-safe shadow-[0_-10px_40px_rgba(0,0,0,0.3)]">
+        <button @click="tab='home'" :class="['nav-item flex flex-col items-center gap-1.5 transition-all w-16', tab==='home'?'active':'text-slate-500']">
+            <svg xmlns="http://www.w3.org/2000/svg" class="nav-icon w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+            <span class="text-[10px] font-medium transition-all">Asosiy</span>
+        </button>
+        <button @click="tab='tarif'" :class="['nav-item flex flex-col items-center gap-1.5 transition-all w-16', tab==='tarif'?'active':'text-slate-500']">
+            <svg xmlns="http://www.w3.org/2000/svg" class="nav-icon w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v8l9-11h-7z" />
+            </svg>
+            <span class="text-[10px] font-medium transition-all">Tarif</span>
+        </button>
+        <button @click="tab='transfer'" :class="['nav-item flex flex-col items-center gap-1.5 transition-all w-16', tab==='transfer'?'active':'text-slate-500']">
+            <svg xmlns="http://www.w3.org/2000/svg" class="nav-icon w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <span class="text-[10px] font-medium transition-all">Ko'chirish</span>
+        </button>
+        <button @click="tab='sozlama'" :class="['nav-item flex flex-col items-center gap-1.5 transition-all w-16', tab==='sozlama'?'active':'text-slate-500']">
+            <svg xmlns="http://www.w3.org/2000/svg" class="nav-icon w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            <span class="text-[10px] font-medium transition-all">Sozlama</span>
+        </button>
+    </nav>
+
+    <!-- Nima uchun nomer ulashim kerak Modal -->
+    <div v-if="showWhyPhone" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" @click.self="showWhyPhone = false">
+        <div class="glass w-full max-w-sm p-6 rounded-2xl relative shadow-2xl">
+            <h3 class="text-xl font-bold mb-3 flex items-center gap-2">❓ Nega raqam kerak?</h3>
+            <p class="text-sm text-slate-300 leading-relaxed mb-4">
+                Yopiq guruhlar va kanallardan mediani yuklab olish uchun siz avval o'sha guruhga a'zo bo'lgan bo'lishingiz kerak. 
+                Tizim sizning akkauntingiz orqali (Userbot) yopiq kanaldan xabarni oladi va bot orqali sizga qulay qilib yuboradi. 
+                <br><br>
+                <b>Xavfsizlik:</b> Sizning profilingiz faqatgina o'zingiz yuborgan havoladagi mediani yuklab olish uchungina ishlatiladi. Boshqa hech qanday ma'lumotlaringiz o'qilmaydi va serverda saqlanmaydi!
+            </p>
+            <button @click="showWhyPhone = false" class="btn-primary w-full py-3 rounded-xl font-semibold">Tushunarli, yopish</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const { createApp } = Vue;
+createApp({
+    data() {
+        return {
+            tg: null,
+            tgUser: null,
+            token: null,
+            tab: 'home',
+
+            // Profile
+            profile: null,
+            history: [],
+            historyLoading: true,
+
+            // Session auth
+            sessionActive: false,
+            authStep: 'phone',
+            phone: '', code: '', phoneHash: '', pass2fa: '',
+            
+            // Transfer
+            channels: (function() {
+                try { return JSON.parse(localStorage.getItem('cached_channels') || '[]'); }
+                catch(e) { return []; }
+            })(),
+            loadingChannels: false,
+            transferSource: '',
+            transferTarget: '',
+            sourceManual: false,
+            targetManual: false,
+            transferType: 'all',
+            isTransferring: false,
+            transferMessage: '',
+            transferState: null,
+            transferPollTimer: null,
+            loading: false,
+
+            // Tariffs
+            tariffs: [],
+            tarifsLoading: true,
+
+            // Payment
+            payStep: 'list',   // list | info
+            payData: {},
+            paymentId: null,
+            countdownSec: 120,
+            countdownTimer: null,
+            pollTimer: null,
+            polling: false,
+
+            // Settings
+            settings: { autoCompress: false, saveToSaved: false },
+
+            // Download
+            downloadLink: '',
+            isDownloading: false,
+
+            // Modals
+            showWhyPhone: false
+        };
+    },
+    computed: {
+        tariffPct() {
+            if (!this.profile) return 0;
+            const t = this.profile.tariff;
+            return Math.min(100, (t.used_gb / t.total_gb) * 100);
+        },
+        countdownOffset() {
+            const pct = this.countdownSec / 120;
+            return 220 - 220 * pct;
+        },
+        countdownColor() {
+            if (this.countdownSec > 60) return '#22c55e';
+            if (this.countdownSec > 30) return '#f59e0b';
+            return '#ef4444';
+        }
+    },
+    async mounted() {
+        const _tg = window.Telegram?.WebApp;
+        if (_tg) {
+            this.tg = Vue.markRaw(_tg);
+            this.tg.expand();
+            this.tg.ready();
+            this.tgUser = this.tg.initDataUnsafe?.user || null;
+            const p = this.tg.themeParams || {};
+            const r = document.documentElement;
+            if (p.bg_color) r.style.setProperty('--tg-bg', p.bg_color);
+            if (p.text_color) r.style.setProperty('--tg-text', p.text_color);
+            if (p.button_color) r.style.setProperty('--tg-btn', p.button_color);
+            if (p.secondary_bg_color) r.style.setProperty('--tg-secondary', p.secondary_bg_color);
+            if (p.hint_color) r.style.setProperty('--tg-hint', p.hint_color);
+        }
+
+        // JWT tokenini localStorage dan yuklab olish
+        this.token = localStorage.getItem('jwt_token');
+
+        if (!this.token && this.tg?.initData) {
+            await this.autoLogin();
+        }
+
+        if (this.token) {
+            this.loadProfile();
+            this.checkSession();
+            // WebApp ga kirish bilan kanallarni darhol fonda yuklab qo'yish!
+            this.loadChannels(false);
+        }
+        await this.loadTariffs();
+    },
+    watch: {
+        tab(newVal) {
+            if (newVal === 'transfer' && this.channels.length === 0 && this.sessionActive) {
+                this.loadChannels(false);
+            }
+        }
+    },
+    methods: {
+        async loadChannels(showAlertOnError = false) {
+            if (!this.token) return;
+            if (this.loadingChannels) return;
+            this.loadingChannels = true;
+            try {
+                const url = showAlertOnError ? '/api/user/channels?refresh=true' : '/api/user/channels';
+                const res = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${this.token}` }
+                });
+                if (res.ok) {
+                    this.channels = await res.json();
+                    try {
+                        localStorage.setItem('cached_channels', JSON.stringify(this.channels));
+                    } catch(e) {}
+                } else {
+                    if (res.status === 400 || res.status === 401) {
+                        this.channels = [];
+                        localStorage.removeItem('cached_channels');
+                    }
+                    if (showAlertOnError) {
+                        let msg = "Kanal va guruhlarni yuklashda xato!";
+                        try {
+                            const d = await res.json();
+                            if (d.detail) msg = d.detail;
+                        } catch(e) {}
+                        this.tg?.showAlert(msg);
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+                if (showAlertOnError) {
+                    this.tg?.showAlert("Serverga ulanishda xato!");
+                }
+            } finally {
+                this.loadingChannels = false;
+            }
+        },
+        async startTransfer() {
+            if (!this.transferSource || !this.transferTarget) return;
+            this.isTransferring = true;
+            this.transferState = { status: 'initializing', message: 'Tayyorlanmoqda...', current: 0, total: 0 };
+            const sStr = String(this.transferSource).trim();
+            const tStr = String(this.transferTarget).trim();
+            const sourceVal = (!isNaN(sStr) && sStr !== '') ? Number(sStr) : sStr;
+            const targetVal = (!isNaN(tStr) && tStr !== '') ? Number(tStr) : tStr;
+            try {
+                const res = await fetch('/api/user/transfer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.token}` },
+                    body: JSON.stringify({
+                        source_chat_id: sourceVal,
+                        target_chat_id: targetVal,
+                        media_type: this.transferType
+                    })
+                });
+                if (res.ok) {
+                    this.tg?.HapticFeedback?.notificationOccurred('success');
+                    this.startTransferPoll();
+                } else {
+                    let errMsg = 'Xato yuz berdi';
+                    try { const d = await res.json(); errMsg = d.detail || errMsg; } catch(x) {}
+                    this.transferState = { status: 'error', message: errMsg };
+                }
+            } catch (e) {
+                console.error('Transfer error:', e);
+                this.transferState = { status: 'error', message: 'Ulanishda xato: ' + (e.message || e) };
+            } finally {
+                this.isTransferring = false;
+            }
+        },
+        startTransferPoll() {
+            if (this.transferPollTimer) clearInterval(this.transferPollTimer);
+            this.transferPollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/user/transfer/status', {
+                        headers: { 'Authorization': `Bearer ${this.token}` }
+                    });
+                    if (res.ok) {
+                        const state = await res.json();
+                        if (state.status !== 'none') {
+                            this.transferState = state;
+                            if (state.status === 'completed' || state.status === 'error') {
+                                clearInterval(this.transferPollTimer);
+                                if (state.status === 'completed') this.tg?.HapticFeedback?.notificationOccurred('success');
+                                else this.tg?.HapticFeedback?.notificationOccurred('error');
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }, 1500);
+        },
+        resetTransfer() {
+            this.transferState = null;
+            this.transferSource = '';
+            this.transferTarget = '';
+            if (this.transferPollTimer) clearInterval(this.transferPollTimer);
+        },
+        async cancelTransfer() {
+            try {
+                await fetch('/api/user/transfer/cancel', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${this.token}` }
+                });
+                this.resetTransfer();
+                this.tg?.showAlert("Ko'chirish jarayoni to'xtatildi");
+            } catch(e) {
+                this.resetTransfer();
+            }
+        },
+        async startDownload() {
+            if (!this.downloadLink) return;
+            if (!this.token) {
+                this.tg?.showAlert("Tizimga kirilmagan! Sahifani yopib qaytadan oching.");
+                return;
+            }
+            this.isDownloading = true;
+            try {
+                const res = await fetch('/api/user/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+                    body: JSON.stringify({ link: this.downloadLink })
+                });
+                if (res.ok) {
+                    this.downloadLink = "";
+                    this.tg?.showAlert("✅ Yuklash boshlandi!\n\nBot chatini oching — jarayon u yerda ko'rsatiladi.");
+                } else {
+                    let errMsg = "Xatolik yuz berdi";
+                    try {
+                        const d = await res.json();
+                        errMsg = typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail);
+                    } catch {}
+                    this.tg?.showAlert("❌ " + errMsg);
+                }
+            } catch (err) {
+                this.tg?.showAlert("🌐 Serverga ulanishda xatolik!\n" + err.message);
+            } finally {
+                this.isDownloading = false;
+            }
+        },
+        async autoLogin() {
+            try {
+                const res = await fetch('/api/auth/telegram', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ initData: this.tg.initData })
+                });
+                if (res.ok) {
+                    const d = await res.json();
+                    this.token = d.access_token;
+                    localStorage.setItem('jwt_token', this.token);
+                    this.loadChannels(false);
+                }
+            } catch {}
+        },
+        // ── Profil ──────────────────────────────────────────────
+        async loadProfile() {
+            try {
+                const res = await fetch('/api/user/me', { headers: { Authorization: `Bearer ${this.token}` } });
+                if (res.ok) {
+                    this.profile = await res.json();
+                    // Agar tgUser hali to'ldirilmagan bo'lsa, profildan olamiz
+                    if (!this.tgUser) {
+                        this.tgUser = { id: this.profile.id, first_name: this.profile.first_name };
+                    }
+                    this.settings.autoCompress = this.profile.auto_compress;
+                    this.settings.saveToSaved = this.profile.save_to_saved_messages;
+                    await this.loadHistory();
+                } else if (res.status === 401 || res.status === 404) {
+                    // Token eskirgan yoki user topilmadi, tozalab qayta login qilish
+                    localStorage.removeItem('jwt_token');
+                    this.token = null;
+                    if (this.tg?.initData) {
+                        await this.autoLogin();
+                        if (this.token) {
+                            await this.loadProfile();
+                            await this.checkSession();
+                        }
+                    }
+                }
+            } catch {}
+        },
+        async checkSession() {
+            try {
+                const res = await fetch('/api/sessions/status', { headers: { Authorization: `Bearer ${this.token}` } });
+                if (res.ok) {
+                    const d = await res.json();
+                    this.sessionActive = d.is_active === true;
+                    if (this.sessionActive && this.channels.length === 0) {
+                        this.loadChannels(false);
+                    } else if (!this.sessionActive) {
+                        this.channels = [];
+                        localStorage.removeItem('cached_channels');
+                    }
+                }
+            } catch {}
+        },
+        async loadHistory() {
+            this.historyLoading = true;
+            try {
+                const res = await fetch('/api/user/history', { headers: { Authorization: `Bearer ${this.token}` } });
+                if (res.ok) this.history = await res.json();
+            } finally { this.historyLoading = false; }
+        },
+
+        // ── Tariflar ────────────────────────────────────────────
+        async loadTariffs() {
+            this.tarifsLoading = true;
+            try {
+                const res = await fetch('/api/billing/tariffs');
+                if (res.ok) this.tariffs = await res.json();
+            } finally { this.tarifsLoading = false; }
+        },
+
+        // ── To'lov oqimi ────────────────────────────────────────
+        async startCheckout(tariffId) {
+            if (!this.token) {
+                this.tg?.showAlert("Avval tizimga kiring.");
+                return;
+            }
+            try {
+                const res = await fetch('/api/billing/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+                    body: JSON.stringify({ tariff_id: tariffId })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    this.tg?.showAlert(err.detail || "Xato yuz berdi");
+                    return;
+                }
+                this.payData = await res.json();
+                this.paymentId = this.payData.payment_id;
+                this.countdownSec = 600;
+                this.payStep = 'info';
+                this.startCountdown();
+                this.startPayStatusPoll();  // Darhol avtomatik tekshiruv boshlash
+            } catch { this.tg?.showAlert("Server bilan bog'lanishda xato."); }
+        },
+        startCountdown() {
+            clearInterval(this.countdownTimer);
+            this.countdownTimer = setInterval(() => {
+                if (this.countdownSec > 0) {
+                    this.countdownSec--;
+                } else {
+                    clearInterval(this.countdownTimer);
+                    clearInterval(this.pollTimer);
+                    this.polling = false;
+                }
+            }, 1000);
+        },
+        startPayStatusPoll() {
+            if (this.polling) return;
+            this.polling = true;
+            this.pollTimer = setInterval(async () => {
+                try {
+                    const res = await fetch(`/api/billing/payment/${this.paymentId}/status`, {
+                        headers: { Authorization: `Bearer ${this.token}` }
+                    });
+                    const d = await res.json();
+                    if (d.status === 'completed') {
+                        clearInterval(this.pollTimer);
+                        clearInterval(this.countdownTimer);
+                        this.polling = false;
+                        this.payStep = 'list';
+                        this.tg?.showAlert("✅ To'lov tasdiqlandi! Tarifingiz faollashtirildi.");
+                        await this.loadProfile();
+                        this.tab = 'home';
+                    } else if (d.status === 'expired' || d.seconds_left === 0) {
+                        clearInterval(this.pollTimer);
+                        this.polling = false;
+                        this.countdownSec = 0;
+                    }
+                } catch {}
+            }, 5000);
+        },
+        cancelPay() {
+            clearInterval(this.countdownTimer);
+            clearInterval(this.pollTimer);
+            this.payStep = 'list';
+            this.payData = {};
+            this.polling = false;
+        },
+
+        // ── Nusxalash ───────────────────────────────────────────
+        copy(val) {
+            navigator.clipboard?.writeText(String(val));
+            this.tg?.HapticFeedback?.notificationOccurred('success');
+        },
+
+        // ── Session ─────────────────────────────────────────────
+        async sendCode() {
+            if (!this.phone) return this.tg?.showAlert("Raqamni kiriting");
+            this.loading = true;
+            try {
+                const res = await fetch('/api/sessions/send_code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+                    body: JSON.stringify({ phone_number: this.phone })
+                });
+                const d = await res.json();
+                if (res.ok) {
+                    this.phoneHash = d.phone_code_hash;
+                    this.authStep = 'code';
+                } else { this.tg?.showAlert(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail) || "Xato"); }
+            } finally { this.loading = false; }
+        },
+        async verifyCode() {
+            if (!this.code) return this.tg?.showAlert("Kodni kiriting");
+            this.loading = true;
+            try {
+                const res = await fetch('/api/sessions/verify_code', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+                    body: JSON.stringify({ phone_number: this.phone, phone_code_hash: this.phoneHash, code: this.code })
+                });
+                const d = await res.json();
+                if (d.status === 'success') {
+                    this.sessionActive = true;
+                    this.tab = 'home';
+                    this.tg?.showAlert("✅ Akkaunt muvaffaqiyatli ulandi!");
+                    this.loadChannels(false);
+                } else if (d.status === '2fa_required') {
+                    this.authStep = 'password';
+                } else { this.tg?.showAlert(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail) || "Xato"); }
+            } finally { this.loading = false; }
+        },
+        async verifyPassword() {
+            if (!this.pass2fa) return this.tg?.showAlert("Parolni kiriting");
+            this.loading = true;
+            try {
+                const res = await fetch('/api/sessions/verify_2fa', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.token}` },
+                    body: JSON.stringify({ phone_number: this.phone, password: this.pass2fa })
+                });
+                const d = await res.json();
+                if (res.ok && d.status === 'success') {
+                    this.sessionActive = true;
+                    this.tab = 'home';
+                    this.tg?.showAlert("✅ Akkaunt ulandi!");
+                    this.loadChannels(false);
+                } else {
+                    let errMsg = "Xato yuz berdi";
+                    if (d.detail) errMsg = typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail);
+                    else if (d.message) errMsg = d.message;
+                    this.tg?.showAlert("❌ " + errMsg);
+                }
+            } catch (err) {
+                this.tg?.showAlert("🌐 Ulanishda xatolik: " + err.message);
+            } finally { this.loading = false; }
+        },
+        logout() {
+            this.tg?.showConfirm("Akkauntdan chiqishni tasdiqlaysizmi?", (ok) => {
+                if (ok) { this.sessionActive = false; this.authStep = 'phone'; this.phone = ''; }
+            });
+        },
+
+        // ── Sozlamalar ──────────────────────────────────────────
+        saveSettings() {
+            this.tg?.HapticFeedback?.notificationOccurred('success');
+            this.tg?.showAlert("Sozlamalar saqlandi!");
+        },
+
+        // ── Yordamchi ───────────────────────────────────────────
+        fileIcon(name) {
+            if (!name) return '📄';
+            const ext = name.split('.').pop().toLowerCase();
+            if (['mp4','mov','avi','mkv'].includes(ext)) return '🎥';
+            if (['jpg','jpeg','png','webp'].includes(ext)) return '🖼';
+            if (['mp3','ogg','aac','flac'].includes(ext)) return '🎵';
+            return '📄';
+        },
+        formatSize(bytes) {
+            if (bytes >= 1024**3) return (bytes/1024**3).toFixed(1) + ' GB';
+            if (bytes >= 1024**2) return (bytes/1024**2).toFixed(1) + ' MB';
+            return (bytes/1024).toFixed(0) + ' KB';
+        },
+        formatDate(iso) {
+            const d = new Date(iso);
+            return d.toLocaleDateString('uz-UZ', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+    }
+}).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+downloads/
+*.session
+*.session-journal
+__pycache__/
+*.pyc
+*.pyo
+.env
+venv/
+.venv/
+env/
+*.log
+
+storage.db
+*.db
+*.sqlite
+*.sqlite3
