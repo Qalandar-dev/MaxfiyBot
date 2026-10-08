@@ -178,7 +178,7 @@ async def cmd_start(message: Message) -> None:
         if domain:
             url = f"https://{domain}/user-dashboard"
         else:
-            url = os.getenv("WEBAPP_URL", "https://maxfiydanyuklayman-production.up.railway.app/user-dashboard")
+            url = os.getenv("WEBAPP_URL", "https://maxfiy-kanaldan-yuklab-ber-production.up.railway.app/user-dashboard")
 
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
@@ -239,7 +239,7 @@ async def cmd_admin(message: Message) -> None:
         url = f"https://{domain}/admin-panel"
     else:
         # Default fallback
-        url = os.getenv("WEBAPP_URL", "https://maxfiydanyuklayman-production.up.railway.app/admin-panel")
+        url = os.getenv("WEBAPP_URL", "https://maxfiy-kanaldan-yuklab-ber-production.up.railway.app/admin-panel")
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
